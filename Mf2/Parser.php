@@ -1164,7 +1164,7 @@ class Parser {
 			'type' => $mfTypes,
 			'properties' => $return
 		);
-		
+
 		if(trim($e->getAttribute('id')) !== '') {
 			$parsed['id'] = trim($e->getAttribute("id"));
 		}
@@ -1602,13 +1602,37 @@ class Parser {
 				break;
 
 				case 'vevent':
+					$location_and_vcard = $this->xpath->query('.//*[contains(concat(" ", normalize-space(@class), " "), " location ") and contains(concat(" ", normalize-space(@class), " "), " vcard ")]', $el);
+
+					if ( $location_and_vcard->length ) {
+						foreach ( $location_and_vcard as $tempEl ) {
+							if ( !$this->hasRootMf2($tempEl) ) {
+								$this->backcompat($tempEl, 'vcard');
+								$this->addMfClasses($tempEl, 'p-location h-card');
+								$this->addUpgraded($tempEl, array('location', 'vcard'));
+							}
+						}
+					}
+
+					$location_and_adr = $this->xpath->query('.//*[contains(concat(" ", normalize-space(@class), " "), " location ") and contains(concat(" ", normalize-space(@class), " "), " adr ")]', $el);
+
+					if ( $location_and_adr->length ) {
+						foreach ( $location_and_adr as $tempEl ) {
+							if ( !$this->hasRootMf2($tempEl) ) {
+								$this->backcompat($tempEl, 'adr');
+								$this->addMfClasses($tempEl, 'p-location h-adr');
+								$this->addUpgraded($tempEl, array('location', 'adr'));
+							}
+						}
+					}
+
 					$location = $this->xpath->query('.//*[contains(concat(" ", normalize-space(@class), " "), " location ")]', $el);
 
 					if ( $location->length ) {
 						foreach ( $location as $tempEl ) {
 							if ( !$this->hasRootMf2($tempEl) ) {
-								$this->addMfClasses($tempEl, 'p-location h-card');
-								$this->backcompat($tempEl, 'vcard');
+								$this->addMfClasses($tempEl, 'p-location');
+								$this->addUpgraded($tempEl, array('location'));
 							}
 						}
 					}
