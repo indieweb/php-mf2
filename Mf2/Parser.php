@@ -87,13 +87,38 @@ function fetch($url, $convertClassic = true, &$curlInfo=null) {
 	return parse($html, $url, $convertClassic);
 }
 
-/**
- * Unicode to HTML Entities
- * @param string $input String containing characters to convert into HTML entities
- * @return string
- */
-function unicodeToHtmlEntities($input) {
-	return mb_convert_encoding($input, 'HTML-ENTITIES', mb_detect_encoding($input));
+function load_dom_document($input) {
+	$d = new \DOMDocument();
+	@$d->loadHTML($input, \LIBXML_NOWARNING);
+	if (substr($input, 0, 3) === "\xEF\xBB\xBF") {
+		// the document has a byte order mark and is unambiguously UTF-8
+		return $d;
+	}
+	/* Examine each <meta> element in the document to determine whether
+		there is a charset attribute that signals UTF-8 encoding.
+
+		If there is we add a UTF-8 byte order mark to the input and parse
+		the document a second time, yielding a correct document. Otherwise
+		we return the document as-is rather than jump through hoops to
+		correct it (if indeed it is incorrect).
+
+		The truly correct thing to do is to use a modern HTML parser which
+		implements the encoding pre-scan algorithm; this should suffice when
+		such a modern parser is not available, however.
+	*/
+	$charset = false;
+	$labelPattern = '/^\s*(?:unicode-1-1-utf-8|unicode11utf8|unicode20utf8|utf-8|utf8|x-unicode20utf8)\s*$/i'; // See https://encoding.spec.whatwg.org/#names-and-labels
+	foreach ($d->getElementsByTagName("meta") as $e) {
+		if (preg_match($labelPattern, $e->getAttribute("charset"))) {
+			$charset = true;
+			break;
+		}
+	}
+	if ($charset) {
+		$d = new \DOMDocument();
+		@$d->loadHTML("\xEF\xBB\xBF".$input, \LIBXML_NOWARNING);
+	}
+	return $d;
 }
 
 /**
@@ -111,10 +136,9 @@ function collapseWhitespace($str) {
 }
 
 function unicodeTrim($str) {
-	// this is cheating. TODO: find a better way if this causes any problems
-	$str = str_replace(mb_convert_encoding('&nbsp;', 'UTF-8', 'HTML-ENTITIES'), ' ', $str);
-	$str = preg_replace('/^\s+/', '', $str);
-	return preg_replace('/\s+$/', '', $str);
+	// the binary sequence C2A0 is a UTF-8 non-breaking space character
+	$str = preg_replace('/^(?:\s|\x{C2}\x{A0})+/', '', $str);
+	return preg_replace('/(?:\s|\x{C2}\x{A0})+$/', '', $str);
 }
 
 /**
@@ -161,8 +185,8 @@ function nestedMfPropertyNamesFromClass($class) {
 	foreach (explode(' ', $class) as $classname) {
 		foreach ($prefixes as $prefix) {
 			// Check if $classname is a valid property classname for $prefix.
-			if (mb_substr($classname, 0, mb_strlen($prefix)) == $prefix && $classname != $prefix) {
-				$propertyName = mb_substr($classname, mb_strlen($prefix));
+			if (substr($classname, 0, strlen($prefix)) == $prefix && $classname != $prefix) {
+				$propertyName = substr($classname, strlen($prefix));
 				$propertyNames[$propertyName][] = $prefix;
 			}
 		}
@@ -361,8 +385,7 @@ class Parser {
 					$doc = new \Masterminds\HTML5(array('disable_html_ns' => true));
 					$doc = $doc->loadHTML($input);
 			} else {
-				$doc = new DOMDocument();
-				@$doc->loadHTML(unicodeToHtmlEntities($input), \LIBXML_NOWARNING);
+				$doc = load_dom_document($input);
 			}
 		} elseif (is_a($input, 'DOMDocument')) {
 			$doc = clone $input;
